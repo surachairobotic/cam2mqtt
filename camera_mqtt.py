@@ -4,6 +4,7 @@ import base64
 import paho.mqtt.client as mqtt
 from dotenv import load_dotenv
 import os
+import subprocess
 
 # Load environment variables from .env file
 load_dotenv()
@@ -24,6 +25,31 @@ def on_connect(client, userdata, flags, reason_code, properties):
 def on_disconnect(client, userdata, disconnect_flags, reason_code, properties):
     print(f"Disconnected with reason code {reason_code}")
 
+def is_connected(host="8.8.8.8"):
+    try:
+        subprocess.check_call(["ping", "-c", "1", host], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+def restart_wifi():
+    # Bring the network interface down
+    os.system("sudo ifconfig wlan0 down")
+    
+    # Wait a moment before bringing it back up
+    time.sleep(2)
+    
+    # Bring the network interface up
+    os.system("sudo ifconfig wlan0 up")
+    
+    # Optionally restart the DHCP client to obtain a new IP address
+    #os.system("sudo dhclient wlan0")
+
+    # Or restart networking service (this will restart all networking interfaces)
+    # os.system("sudo systemctl restart networking")
+    time.sleep(5)
+    print("Wi-Fi connection restarted")
+
 # Initialize MQTT client
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
@@ -37,6 +63,7 @@ if not cap.isOpened():
     print("❌ Could not open camera.")
     exit()
 
+disconnect_count=0
 try:
     while True:
         ret, frame = cap.read()
@@ -48,9 +75,15 @@ try:
         _, buffer = cv2.imencode('.jpg', frame)
         jpg_as_text = base64.b64encode(buffer).decode('utf-8')
 
-        # Publish to MQTT
-        client.publish(MQTT_TOPIC, jpg_as_text)
-        print(f"📸 Image published to {MQTT_TOPIC}")
+        if is_connected():
+            # Publish to MQTT
+            client.publish(MQTT_TOPIC, jpg_as_text)
+            print(f"📸 Image published to {MQTT_TOPIC}. disconnect_count={disconnect_count}")
+            disconnect_count=0
+        else:
+            disconnect_count+=1
+        if disconnect_count >= 60:
+            restart_wifi()
 
         time.sleep(CAPTURE_INTERVAL)
 
