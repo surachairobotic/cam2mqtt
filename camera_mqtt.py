@@ -14,7 +14,7 @@ MQTT_PORT = int(os.getenv("MQTT_PORT", 1883))
 MQTT_TOPIC = os.getenv("MQTT_TOPIC")
 MQTT_USERNAME = os.getenv("MQTT_USERNAME")
 MQTT_PASSWORD = os.getenv("MQTT_PASSWORD")
-CAPTURE_INTERVAL = int(os.getenv("CAPTURE_INTERVAL", 5))
+CAPTURE_INTERVAL = float(os.getenv("CAPTURE_INTERVAL", 1))
 
 def on_connect(client, userdata, flags, reason_code, properties):
     if reason_code == 0:
@@ -77,7 +77,7 @@ try:
 
         if is_connected():
             # Publish to MQTT
-            client.publish(MQTT_TOPIC, jpg_as_text)
+            client.publish(MQTT_TOPIC, jpg_as_text, qos=0)
             print(f"📸 Image published to {MQTT_TOPIC}. disconnect_count={disconnect_count}")
             disconnect_count=0
         else:
