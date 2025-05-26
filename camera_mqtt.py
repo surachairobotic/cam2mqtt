@@ -5,6 +5,7 @@ import paho.mqtt.client as mqtt
 from dotenv import load_dotenv
 import os
 import subprocess
+from datetime import datetime
 
 # Load environment variables from .env file
 load_dotenv()
@@ -16,14 +17,17 @@ MQTT_USERNAME = os.getenv("MQTT_USERNAME")
 MQTT_PASSWORD = os.getenv("MQTT_PASSWORD")
 CAPTURE_INTERVAL = int(os.getenv("CAPTURE_INTERVAL", 5))
 
+def log(message):
+    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {message}")
+
 def on_connect(client, userdata, flags, reason_code, properties):
     if reason_code == 0:
-        print("Connected successfully")
+        log("✅ Connected to MQTT broker successfully.")
     else:
-        print(f"Connection failed with reason code {reason_code}")
+        log(f"❌ Connection failed with reason code {reason_code}")
 
 def on_disconnect(client, userdata, disconnect_flags, reason_code, properties):
-    print(f"Disconnected with reason code {reason_code}")
+    log(f"🔌 Disconnected with reason code {reason_code}")
 
 def is_connected(host="8.8.8.8"):
     try:
@@ -33,26 +37,18 @@ def is_connected(host="8.8.8.8"):
         return False
 
 def restart_wifi():
-    # Bring the network interface down
+    log("🔄 Restarting Wi-Fi connection...")
     os.system("sudo ifconfig wlan0 down")
-    
-    # Wait a moment before bringing it back up
     time.sleep(2)
-    
-    # Bring the network interface up
     os.system("sudo ifconfig wlan0 up")
-    
-    # Optionally restart the DHCP client to obtain a new IP address
-    #os.system("sudo dhclient wlan0")
-
-    # Or restart networking service (this will restart all networking interfaces)
-    # os.system("sudo systemctl restart networking")
     time.sleep(5)
-    print("Wi-Fi connection restarted")
+    log("✅ Wi-Fi connection restarted.")
 
 # Initialize MQTT client
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
+client.on_connect = on_connect
+client.on_disconnect = on_disconnect
 client.connect(MQTT_BROKER, MQTT_PORT)
 client.loop_start()
 
@@ -60,35 +56,62 @@ client.loop_start()
 cap = cv2.VideoCapture(0)
 
 if not cap.isOpened():
-    print("❌ Could not open camera.")
+    log("❌ Could not open camera.")
     exit()
 
-disconnect_count=0
+disconnect_count = 0
+
 try:
     while True:
+        start_loop_time = time.time()
+        log("⏳ Starting capture loop...")
+
         ret, frame = cap.read()
+        capture_time = time.time()
+
         if not ret:
-            print("⚠️ Failed to capture image.")
+            log("⚠️ Failed to capture image.")
             continue
+
+        log(f"📷 Image captured. Time taken: {capture_time - start_loop_time:.3f} seconds")
 
         # Encode the frame as JPEG
         _, buffer = cv2.imencode('.jpg', frame)
+        encode_time = time.time()
+
+        log(f"🖼️ Image encoded to JPEG. Time taken: {encode_time - capture_time:.3f} seconds")
+
+        # Convert to base64
         jpg_as_text = base64.b64encode(buffer).decode('utf-8')
+        base64_time = time.time()
+
+        log(f"📝 Image encoded to Base64. Time taken: {base64_time - encode_time:.3f} seconds")
 
         if is_connected():
-            # Publish to MQTT
-            client.publish(MQTT_TOPIC, jpg_as_text)
-            print(f"📸 Image published to {MQTT_TOPIC}. disconnect_count={disconnect_count}")
-            disconnect_count=0
+            log("🌐 Network is connected. Publishing to MQTT...")
+
+            publish_start = time.time()
+            result = client.publish(MQTT_TOPIC, jpg_as_text)
+            result.wait_for_publish()  # Wait until published for accurate timing
+            publish_end = time.time()
+
+            log(f"📡 Image published to {MQTT_TOPIC}. Time taken: {publish_end - publish_start:.3f} seconds")
+            log(f"✅ Loop completed successfully. disconnect_count={disconnect_count}")
+            disconnect_count = 0
         else:
-            disconnect_count+=1
+            log("❌ No network connection.")
+            disconnect_count += 1
+
         if disconnect_count >= 60:
             restart_wifi()
+
+        total_loop_time = time.time() - start_loop_time
+        log(f"⏲️ Total loop time: {total_loop_time:.3f} seconds\n")
 
         time.sleep(CAPTURE_INTERVAL)
 
 except KeyboardInterrupt:
-    print("🛑 Stopping...")
+    log("🛑 Stopping...")
 
 finally:
     cap.release()
