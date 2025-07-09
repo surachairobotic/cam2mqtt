@@ -117,6 +117,14 @@ try:
         total_loop_time = time.time() - start_loop_time
         log(f"⏲️ Total loop time: {total_loop_time:.3f} seconds\n")
 
+<<<<<<< HEAD
+        time.sleep(0.01)
+
+except KeyboardInterrupt:
+    log("🛑 Stopping...")
+
+        time.sleep(CAPTURE_INTERVAL)
+
 except KeyboardInterrupt:
     log("🛑 Stopping...")
 
